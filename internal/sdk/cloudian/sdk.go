@@ -149,11 +149,9 @@ func (client Client) ListUsers(ctx context.Context, groupId string, offsetUserId
 		params["offset"] = *offsetUserId
 	}
 
-	_, err := client.restyClient.R().
-		SetHeader("Authorization", client.authHeader).
+	_, err := basicCloudianRequest(ctx, client).
 		SetQueryParams(params).
 		SetResult(&users).
-		ForceContentType("application/json"). // TODO: why is this needed?
 		Get(client.baseURL + "/user/list")
 	if err != nil {
 		return nil, fmt.Errorf("GET list users failed: %w", err)
@@ -181,13 +179,11 @@ func (client Client) ListUsers(ctx context.Context, groupId string, offsetUserId
 
 // Delete a single user. Errors if the user does not exist.
 func (client Client) DeleteUser(ctx context.Context, user User) error {
-	_, err := client.restyClient.R().
-		SetHeader("Authorization", client.authHeader).
+	_, err := basicCloudianRequest(ctx, client).
 		SetQueryParams(map[string]string{
 			"groupId": user.GroupID,
 			"userId":  user.UserID,
 		}).
-		SetError(&ErrNotFound). // TODO test this behaviour
 		Delete(client.baseURL + "/user")
 	if err != nil {
 		return err
@@ -199,8 +195,7 @@ func (client Client) DeleteUser(ctx context.Context, user User) error {
 
 // Create a single user of type `User` into a groupId
 func (client Client) CreateUser(ctx context.Context, user User) error {
-	_, err := client.restyClient.R().
-		SetHeader("Authorization", client.authHeader).
+	_, err := basicCloudianRequest(ctx, client).
 		SetBody(toInternalUser(user)).
 		Put(client.baseURL + "/user")
 
@@ -210,9 +205,7 @@ func (client Client) CreateUser(ctx context.Context, user User) error {
 // CreateUserCredentials creates a new set of credentials for a user.
 func (client Client) CreateUserCredentials(ctx context.Context, user User) (*SecurityInfo, error) {
 	var securityInfo SecurityInfo
-	_, err := client.restyClient.R().
-		SetHeader("Authorization", client.authHeader).
-		ForceContentType("application/json"). // TODO: why is this needed?
+	_, err := basicCloudianRequest(ctx, client).
 		SetResult(&securityInfo).
 		SetBody(map[string]string{"groupId": user.GroupID, "userId": user.UserID}).
 		Put(client.baseURL + "/user/credentials")
@@ -227,10 +220,8 @@ func (client Client) CreateUserCredentials(ctx context.Context, user User) (*Sec
 func (client Client) GetUserCredentials(ctx context.Context, user User) ([]SecurityInfo, error) {
 	var securityInfos []SecurityInfo
 
-	resp, err := client.restyClient.R().
-		SetHeader("Authorization", client.authHeader).
+	resp, err := basicCloudianRequest(ctx, client).
 		SetQueryParams(map[string]string{"groupId": user.GroupID, "userId": user.UserID}).
-		ForceContentType("application/json"). // TODO: why is this needed?
 		SetResult(&securityInfos).
 		Get(client.baseURL + "/user/credentials/list")
 	if err != nil {
@@ -243,7 +234,7 @@ func (client Client) GetUserCredentials(ctx context.Context, user User) ([]Secur
 		// Cloudian-API returns 204 if no security credentials found
 		return nil, ErrNotFound
 	default:
-		return nil, fmt.Errorf("error: list credentials errored %w with unexpected status code (%d)", err, resp.StatusCode())
+		return nil, fmt.Errorf("error: list credentials unexpected status code: %d", resp.StatusCode())
 	}
 }
 
@@ -265,8 +256,7 @@ func (client Client) DeleteGroupRecursive(ctx context.Context, groupId string) e
 
 // Deletes a group if it is without members.
 func (client Client) DeleteGroup(ctx context.Context, groupId string) error {
-	_, err := client.restyClient.R().
-		SetHeader("Authorization", client.authHeader).
+	_, err := basicCloudianRequest(ctx, client).
 		SetQueryParams(map[string]string{"groupId": groupId}).
 		Delete(client.baseURL + "/group")
 
@@ -275,8 +265,7 @@ func (client Client) DeleteGroup(ctx context.Context, groupId string) error {
 
 // Creates a group.
 func (client Client) CreateGroup(ctx context.Context, group Group) error {
-	_, err := client.restyClient.R().
-		SetHeader("Authorization", client.authHeader).
+	_, err := basicCloudianRequest(ctx, client).
 		SetBody(toInternal(group)).
 		Put(client.baseURL + "/group")
 
@@ -285,8 +274,7 @@ func (client Client) CreateGroup(ctx context.Context, group Group) error {
 
 // Updates a group if it does not exists.
 func (client Client) UpdateGroup(ctx context.Context, group Group) error {
-	_, err := client.restyClient.R().
-		SetHeader("Authorization", client.authHeader).
+	_, err := basicCloudianRequest(ctx, client).
 		SetBody(toInternal(group)).
 		Post(client.baseURL + "/group")
 
@@ -297,10 +285,8 @@ func (client Client) UpdateGroup(ctx context.Context, group Group) error {
 // This error can then be checked against ErrNotFound: errors.Is(err, ErrNotFound)
 func (client Client) GetGroup(ctx context.Context, groupId string) (*Group, error) {
 	var group groupInternal
-	resp, err := client.restyClient.R().
-		SetHeader("Authorization", client.authHeader).
+	resp, err := basicCloudianRequest(ctx, client).
 		SetQueryParams(map[string]string{"groupId": groupId}).
-		ForceContentType("application/json"). // TODO: why is this needed?
 		SetResult(&group).
 		Get(client.baseURL + "/group")
 	if err != nil {
@@ -317,4 +303,12 @@ func (client Client) GetGroup(ctx context.Context, groupId string) (*Group, erro
 	default:
 		return nil, fmt.Errorf("GET unexpected status. Failure: %w", err)
 	}
+}
+
+func basicCloudianRequest(ctx context.Context, client Client) *resty.Request {
+	return client.restyClient.R().
+		SetContext(ctx).
+		SetHeader("Authorization", client.authHeader).
+		SetHeader("Content-Type", "application/json").
+		ForceContentType("application/json") // TODO figure out why this is needed
 }
