@@ -174,7 +174,6 @@ func (client Client) ListUsers(ctx context.Context, groupId string, offsetUserId
 	}
 
 	return retVal, nil
-
 }
 
 // Delete a single user. Errors if the user does not exist.
@@ -235,6 +234,23 @@ func (client Client) GetUserCredentials(ctx context.Context, user User) ([]Secur
 		return nil, ErrNotFound
 	default:
 		return nil, fmt.Errorf("error: list credentials unexpected status code: %d", resp.StatusCode())
+	}
+}
+
+// DeleteUserCredentials deletes a set of credentials for a user.
+func (client Client) DeleteUserCredentials(ctx context.Context, accessKey string) error {
+	resp, err := basicCloudianRequest(ctx, client).
+		SetQueryParams(map[string]string{"accessKey": accessKey}).
+		Delete(client.baseURL + "/user/credentials")
+	if err != nil {
+		return err
+	}
+
+	switch resp.StatusCode() {
+	case 200:
+		return nil
+	default:
+		return fmt.Errorf("DELETE unexpected status. Failure: %d", resp.StatusCode())
 	}
 }
 
