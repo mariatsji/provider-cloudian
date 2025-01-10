@@ -11,9 +11,7 @@ import (
 )
 
 type Client struct {
-	baseURL     string
-	restyClient *resty.Client
-	authHeader  string
+	client *resty.Client
 }
 
 type Group struct {
@@ -117,16 +115,15 @@ var ErrNotFound = errors.New("not found")
 // WithInsecureTLSVerify skips the TLS validation of the server certificate when `insecure` is true.
 func WithInsecureTLSVerify(insecure bool) func(*Client) {
 	return func(c *Client) {
-		c.restyClient = resty.New().
-			SetTLSClientConfig(&tls.Config{InsecureSkipVerify: insecure}) //nolint:gosec
+		c.client.SetTLSClientConfig(&tls.Config{InsecureSkipVerify: insecure}) //nolint:gosec
 	}
 }
 
 func NewClient(baseURL string, authHeader string, opts ...func(*Client)) *Client {
 	c := &Client{
-		baseURL:     baseURL,
-		restyClient: resty.New(),
-		authHeader:  authHeader,
+		client: resty.New().
+			SetBaseURL(baseURL).
+			SetHeader("Authorization", authHeader),
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -152,7 +149,7 @@ func (client Client) ListUsers(ctx context.Context, groupId string, offsetUserId
 	_, err := basicCloudianRequest(ctx, client).
 		SetQueryParams(params).
 		SetResult(&users).
-		Get(client.baseURL + "/user/list")
+		Get("/user/list")
 	if err != nil {
 		return nil, fmt.Errorf("GET list users failed: %w", err)
 	}
@@ -183,7 +180,7 @@ func (client Client) DeleteUser(ctx context.Context, user User) error {
 			"groupId": user.GroupID,
 			"userId":  user.UserID,
 		}).
-		Delete(client.baseURL + "/user")
+		Delete("/user")
 	if err != nil {
 		return err
 	}
@@ -196,7 +193,7 @@ func (client Client) DeleteUser(ctx context.Context, user User) error {
 func (client Client) CreateUser(ctx context.Context, user User) error {
 	_, err := basicCloudianRequest(ctx, client).
 		SetBody(toInternalUser(user)).
-		Put(client.baseURL + "/user")
+		Put("/user")
 
 	return err
 }
@@ -207,7 +204,7 @@ func (client Client) CreateUserCredentials(ctx context.Context, user User) (*Sec
 	_, err := basicCloudianRequest(ctx, client).
 		SetResult(&securityInfo).
 		SetBody(map[string]string{"groupId": user.GroupID, "userId": user.UserID}).
-		Put(client.baseURL + "/user/credentials")
+		Put("/user/credentials")
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +219,7 @@ func (client Client) GetUserCredentials(ctx context.Context, user User) ([]Secur
 	resp, err := basicCloudianRequest(ctx, client).
 		SetQueryParams(map[string]string{"groupId": user.GroupID, "userId": user.UserID}).
 		SetResult(&securityInfos).
-		Get(client.baseURL + "/user/credentials/list")
+		Get("/user/credentials/list")
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +238,7 @@ func (client Client) GetUserCredentials(ctx context.Context, user User) ([]Secur
 func (client Client) DeleteUserCredentials(ctx context.Context, accessKey string) error {
 	resp, err := basicCloudianRequest(ctx, client).
 		SetQueryParams(map[string]string{"accessKey": accessKey}).
-		Delete(client.baseURL + "/user/credentials")
+		Delete("/user/credentials")
 	if err != nil {
 		return err
 	}
@@ -274,7 +271,7 @@ func (client Client) DeleteGroupRecursive(ctx context.Context, groupId string) e
 func (client Client) DeleteGroup(ctx context.Context, groupId string) error {
 	_, err := basicCloudianRequest(ctx, client).
 		SetQueryParams(map[string]string{"groupId": groupId}).
-		Delete(client.baseURL + "/group")
+		Delete("/group")
 
 	return err
 }
@@ -283,7 +280,7 @@ func (client Client) DeleteGroup(ctx context.Context, groupId string) error {
 func (client Client) CreateGroup(ctx context.Context, group Group) error {
 	_, err := basicCloudianRequest(ctx, client).
 		SetBody(toInternal(group)).
-		Put(client.baseURL + "/group")
+		Put("/group")
 
 	return err
 }
@@ -292,7 +289,7 @@ func (client Client) CreateGroup(ctx context.Context, group Group) error {
 func (client Client) UpdateGroup(ctx context.Context, group Group) error {
 	_, err := basicCloudianRequest(ctx, client).
 		SetBody(toInternal(group)).
-		Post(client.baseURL + "/group")
+		Post("/group")
 
 	return err
 }
@@ -304,7 +301,7 @@ func (client Client) GetGroup(ctx context.Context, groupId string) (*Group, erro
 	resp, err := basicCloudianRequest(ctx, client).
 		SetQueryParams(map[string]string{"groupId": groupId}).
 		SetResult(&group).
-		Get(client.baseURL + "/group")
+		Get("/group")
 	if err != nil {
 		return nil, err
 	}
@@ -322,9 +319,8 @@ func (client Client) GetGroup(ctx context.Context, groupId string) (*Group, erro
 }
 
 func basicCloudianRequest(ctx context.Context, client Client) *resty.Request {
-	return client.restyClient.R().
+	return client.client.R().
 		SetContext(ctx).
-		SetHeader("Authorization", client.authHeader).
 		SetHeader("Content-Type", "application/json").
 		ForceContentType("application/json") // TODO figure out why this is needed
 }

@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/go-resty/resty/v2"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -30,9 +29,9 @@ func TestWrappedErrNotFound(t *testing.T) {
 }
 
 func TestGetGroup(t *testing.T) {
-	cloudianClient, testServer := mockBy(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	cloudianClient, testServer := mockBy(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(groupInternal{GroupID: "QA", Active: "true"})
-	}))
+	})
 	defer testServer.Close()
 
 	expected := Group{
@@ -53,9 +52,9 @@ func TestGetGroup(t *testing.T) {
 }
 
 func TestGetGroupNotFound(t *testing.T) {
-	cloudianClient, testServer := mockBy(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	cloudianClient, testServer := mockBy(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
-	}))
+	})
 	defer testServer.Close()
 
 	_, err := cloudianClient.GetGroup(context.TODO(), "QA")
@@ -67,9 +66,9 @@ func TestGetGroupNotFound(t *testing.T) {
 
 func TestCreateCredentials(t *testing.T) {
 	expected := SecurityInfo{AccessKey: "123", SecretKey: "abc"}
-	cloudianClient, testServer := mockBy(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	cloudianClient, testServer := mockBy(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(expected)
-	}))
+	})
 	defer testServer.Close()
 
 	credentials, err := cloudianClient.CreateUserCredentials(context.TODO(), User{GroupID: "QA", UserID: "user1"})
@@ -85,9 +84,9 @@ func TestCreateCredentials(t *testing.T) {
 
 func TestGetUserCredentials(t *testing.T) {
 	expected := []SecurityInfo{{AccessKey: "123", SecretKey: "abc"}}
-	cloudianClient, testServer := mockBy(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	cloudianClient, testServer := mockBy(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(expected)
-	}))
+	})
 	defer testServer.Close()
 
 	credentials, err := cloudianClient.GetUserCredentials(context.TODO(), User{GroupID: "QA", UserID: "user1"})
@@ -103,9 +102,9 @@ func TestGetUserCredentials(t *testing.T) {
 
 func TestListUsers(t *testing.T) {
 	expected := []User{{GroupID: "QA", UserID: "user1"}}
-	cloudianClient, testServer := mockBy(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	cloudianClient, testServer := mockBy(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(expected)
-	}))
+	})
 	defer testServer.Close()
 
 	users, err := cloudianClient.ListUsers(context.TODO(), "QA", nil)
@@ -119,12 +118,8 @@ func TestListUsers(t *testing.T) {
 	}
 }
 
-func mockBy(handler http.HandlerFunc) (Client, *httptest.Server) {
+func mockBy(handler http.HandlerFunc) (*Client, *httptest.Server) {
 	mockServer := httptest.NewServer(handler)
 
-	return Client{
-		baseURL:     mockServer.URL,
-		restyClient: resty.New(),
-		authHeader:  "",
-	}, mockServer
+	return NewClient(mockServer.URL, ""), mockServer
 }
