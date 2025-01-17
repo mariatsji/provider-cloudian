@@ -112,6 +112,20 @@ type SecurityInfo struct {
 	SecretKey string `json:"secretKey"`
 }
 
+// QoS is the Cloudian API's term for limits on quotas, counts and rates enforced on a `User`
+type QoS struct {
+	// Max storage quota
+	StorageQuota ByteSize
+	// Max storage quota in number of objects
+	StorageQuotaCount uint64
+	// Max nr of HTTP requests per minute
+	RequestRate uint64
+	// Max inbound datarate in ByteSize per minute
+	DataRateInbound ByteSize
+	// Max outbound datarate in ByteSize per minute
+	DataRateOutbound ByteSize
+}
+
 var ErrNotFound = errors.New("not found")
 
 // WithInsecureTLSVerify skips the TLS validation of the server certificate when `insecure` is true.
@@ -402,6 +416,44 @@ func (client Client) GetGroup(ctx context.Context, groupID string) (*Group, erro
 		return nil, ErrNotFound
 	default:
 		return nil, fmt.Errorf("error: GET group unexpected status code: %d", resp.StatusCode())
+	}
+}
+
+func percentage(value uint64, percent float64) uint64 { // nolint:unparam
+	return uint64(float64(value) * percent)
+}
+
+func qosQueryMap(user User, qos QoS) map[string]string {
+	return map[string]string{
+		"userId":               user.UserID,
+		"groupId":              user.GroupID,
+		"hlStorageQuotaKBytes": qos.StorageQuota.KBString(),
+		"wlStorageQuotaKBytes": ByteSize(percentage(qos.StorageQuota.KB(), 0.75)).KBString(),
+		"hlStorageQuotaCount":  fmt.Sprintf("%d", qos.StorageQuotaCount),
+		"wlStorageQuotaCount":  fmt.Sprintf("%d", percentage(qos.StorageQuotaCount, 0.75)),
+		"hlRequestRate":        fmt.Sprintf("%d", qos.RequestRate),
+		"wlRequestRate":        fmt.Sprintf("%d", percentage(qos.RequestRate, 0.75)),
+		"hlDataKBytesIn":       qos.DataRateInbound.KBString(),
+		"wlDataKBytesIn":       ByteSize(percentage(qos.DataRateInbound.KB(), 0.75)).KBString(),
+		"hlDataKBytesOut":      qos.DataRateOutbound.KBString(),
+		"wlDataKBytesOut":      ByteSize(percentage(qos.DataRateOutbound.KB(), 0.75)).KBString(),
+	}
+}
+
+// CreateQuota sets the QoS limits for a `User`. To change QoS limits, a delete and recreate is necessary.
+func (client Client) CreateQuota(ctx context.Context, user User, qos QoS) error {
+	resp, err := client.newRequest(ctx).
+		SetQueryParams(qosQueryMap(user, qos)).
+		Post("/qos/limits")
+	if err != nil {
+		return err
+	}
+
+	switch resp.StatusCode() {
+	case 200:
+		return nil
+	default:
+		return fmt.Errorf("SET quota unexpected status: %d", resp.StatusCode())
 	}
 }
 
